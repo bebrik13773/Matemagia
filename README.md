@@ -174,5 +174,5 @@ npm run dev
 
 <div align="center">
   <br />
-  Сделано с любовью к математике и красивому обучению Genimi Hydrogen ✨
+  Сделано с любовью к математике и красивому обучению Gemini Hydrogen ✨
 </div>
