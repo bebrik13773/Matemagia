@@ -5,7 +5,13 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const repoName = process.env.GITHUB_REPOSITORY?.split('/')[1];
+  const githubPagesBase =
+    repoName && !repoName.endsWith('.github.io') ? `/${repoName}/` : '/';
+  const base = process.env.VITE_BASE || (process.env.GITHUB_ACTIONS ? githubPagesBase : '/');
+
   return {
+    base,
     plugins: [
       react(),
       tailwindcss(),

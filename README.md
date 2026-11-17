@@ -4,8 +4,9 @@
 
 **Умный тренажёр таблицы умножения и деления, в который хочется возвращаться каждый день**
 
-[![Демо](https://img.shields.io/badge/Онлайн--тренажёр-Открыть%20демо-22d3ee?style=for-the-badge&logo=vercel&logoColor=white)](https://ai.studio/apps/44fcd899-e73d-4a57-9f8f-2e6aeef3d589?fullscreenApplet=true)
-[![Статус](https://img.shields.io/badge/Обучение-Умножение%20и%20деление%202–9-a855f7?style=for-the-badge)](#возможности-продукта)
+[![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Открыть%20сайт-22d3ee?style=for-the-badge&logo=github&logoColor=white)](https://bebrik13773.github.io/Matemagia/)
+[![Deploy to GitHub Pages](https://github.com/bebrik13773/Matemagia/actions/workflows/deploy.yml/badge.svg)](https://github.com/bebrik13773/Matemagia/actions/workflows/deploy.yml)
+[![Онлайн-тренажёр](https://img.shields.io/badge/AI%20Studio-Открыть%20демо-a855f7?style=for-the-badge)](https://ai.studio/apps/44fcd899-e73d-4a57-9f8f-2e6aeef3d589?fullscreenApplet=true)
 [![Лицензия](https://img.shields.io/badge/Лицензия-MIT-f5c451?style=for-the-badge)](./LICENSE)
 
 <br />
@@ -15,7 +16,7 @@
 
 <br />
 
-[**🚀 Открыть онлайн-тренажёр**](https://ai.studio/apps/44fcd899-e73d-4a57-9f8f-2e6aeef3d589?fullscreenApplet=true) · [**✨ Возможности**](#-возможности-продукта) · [**📸 Скриншоты**](#-как-это-выглядит) · [**🎓 Экзамен и сертификат**](#-финальный-экзамен-и-сертификат) · [**⚙️ Запуск**](#-быстрый-запуск-для-разработчиков)
+[**🌐 Открыть на GitHub Pages**](https://bebrik13773.github.io/Matemagia/) · [**🚀 Онлайн-тренажёр**](https://ai.studio/apps/44fcd899-e73d-4a57-9f8f-2e6aeef3d589?fullscreenApplet=true) · [**✨ Возможности**](#-возможности-продукта) · [**📸 Скриншоты**](#-как-это-выглядит) · [**🎓 Экзамен и сертификат**](#-финальный-экзамен-и-сертификат) · [**⚙️ Запуск**](#-быстрый-запуск-для-разработчиков)
 
 </div>
 
@@ -123,8 +124,8 @@
 
 ```bash
 # 1. Клонировать репозиторий
-git clone https://github.com/your-username/matemagia.git
-cd matemagia
+git clone https://github.com/bebrik13773/Matemagia.git
+cd Matemagia
 
 # 2. Установить зависимости
 npm install
@@ -141,6 +142,16 @@ npm run dev
 | `npm run build` | Сборка оптимизированной версии в `dist/` |
 | `npm run preview` | Предпросмотр собранного проекта |
 | `npm run lint` | Проверка типов TypeScript (`tsc --noEmit`) |
+
+<details>
+<summary><b>Публикация на GitHub Pages</b></summary>
+
+Репозиторий настроен на автоматическую сборку и публикацию через **GitHub Actions** (`.github/workflows/deploy.yml`):
+1. Откройте **Settings → Pages** в репозитории GitHub.
+2. В разделе **Build and deployment → Source** выберите **GitHub Actions** (вместо *Deploy from a branch*).
+3. При каждом пуше в ветку `main` сайт автоматически собирается и публикуется по адресу [`https://bebrik13773.github.io/Matemagia/`](https://bebrik13773.github.io/Matemagia/).
+
+</details>
 
 <details>
 <summary><b>Технологический стек и структура проекта</b></summary>
