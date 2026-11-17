@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import {
   Difficulty,
   GameState,
@@ -12,6 +13,7 @@ import {
   rankFor,
   weakList,
 } from '../game/engine';
+import { EXPORT_FILE_EXTENSION } from '../game/storageTransfer';
 
 interface HubScreenProps {
   state: GameState;
@@ -21,6 +23,8 @@ interface HubScreenProps {
   onDiffChange: (diff: Difficulty) => void;
   onFocusWeak: (keys: string[]) => void;
   onEditName: () => void;
+  onExport: () => void;
+  onImportFile: (file: File) => void;
   onReset: () => void;
 }
 
@@ -32,8 +36,11 @@ export function HubScreen({
   onDiffChange,
   onFocusWeak,
   onEditName,
+  onExport,
+  onImportFile,
   onReset,
 }: HubScreenProps) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const li = levelInfo(state.xp);
   const rk = rankFor(li.l);
   const om = overallMastery(state);
@@ -253,9 +260,36 @@ export function HubScreen({
               вкладках ниже.
             </p>
           </div>
-          <button type="button" className="ghost-btn small danger-btn" onClick={onReset}>
-            Сбросить прогресс
-          </button>
+          <div className="prof-actions">
+            <button type="button" className="ghost-btn small" onClick={onExport}>
+              📥 Экспорт
+            </button>
+            <button
+              type="button"
+              className="ghost-btn small"
+              onClick={() => importInputRef.current?.click()}
+            >
+              📤 Импорт
+            </button>
+            <button type="button" className="ghost-btn small danger-btn" onClick={onReset}>
+              Сбросить прогресс
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept={EXPORT_FILE_EXTENSION}
+              tabIndex={-1}
+              aria-hidden="true"
+              className="is-hidden-input"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) {
+                  onImportFile(file);
+                }
+              }}
+            />
+          </div>
         </div>
       </div>
     </section>

@@ -37,6 +37,7 @@ import {
   cloneState,
   createDefaultState,
   displayStreak,
+  fmtDate,
   getEquippedPetSkin,
   getStreakBonus,
   levelInfo,
@@ -48,6 +49,15 @@ import {
   rndi,
   snapshotMastery,
 } from './game/engine';
+import {
+  MAX_IMPORT_FILE_BYTES,
+  applyStorageSnapshot,
+  buildExportFilename,
+  createExportPayload,
+  parseAndValidateImport,
+  readStorageEntries,
+  serializeExportPayload,
+} from './game/storageTransfer';
 
 type Screen = 'hub' | 'pet' | 'map' | 'exam' | 'ach' | 'game' | 'results';
 
@@ -729,6 +739,83 @@ export default function App() {
     }
   };
 
+  const handleExportProgress = useCallback(() => {
+    try {
+      const current = stateRef.current;
+      let entries: Record<string, string> = {};
+      try {
+        entries = readStorageEntries(window.localStorage);
+      } catch {
+        entries = {};
+      }
+      const now = Date.now();
+      const payload = createExportPayload(entries, current, now);
+      const content = serializeExportPayload(payload);
+      const filename = buildExportFilename(current.name, now);
+      const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      sfx.click();
+      pushToast('📥', 'Прогресс экспортирован', filename);
+    } catch {
+      sfx.bad();
+      pushToast('⚠️', 'Ошибка экспорта', 'Не удалось создать файл');
+    }
+  }, [pushToast]);
+
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      if (file.size > MAX_IMPORT_FILE_BYTES) {
+        sfx.bad();
+        pushToast('⚠️', 'Ошибка импорта', 'Файл слишком большой (макс. 5 МБ)');
+        return;
+      }
+
+      let rawText = '';
+      try {
+        rawText = await file.text();
+      } catch {
+        sfx.bad();
+        pushToast('⚠️', 'Ошибка импорта', 'Не удалось прочитать файл');
+        return;
+      }
+
+      const check = parseAndValidateImport(rawText, file.name);
+      if (!check.ok) {
+        sfx.bad();
+        pushToast('⚠️', 'Файл не подходит', check.error);
+        return;
+      }
+
+      sfx.click();
+      setConfirmState({
+        text: `Импортировать прогресс из файла от ${fmtDate(check.exportedAt)}? Профиль: «${check.state.name}», ${check.state.xp} XP (ключей хранилища: ${check.storageCount}). Текущий прогресс будет заменён.`,
+        cb: () => {
+          try {
+            applyStorageSnapshot(window.localStorage, check.payload.storage);
+          } catch {
+            pushToast('⚠️', 'Ошибка хранилища', 'Браузер блокирует запись в localStorage');
+            return;
+          }
+          setGameState(check.state);
+          setSoundEnabled(check.state.sound);
+          setAmbientEnabled(check.state.ambient);
+          setSelectedMapKey(null);
+          pendingLevelRef.current = null;
+          sfx.level();
+          pushToast('📤', 'Прогресс импортирован', `${check.state.name} · ${check.state.xp} XP`);
+        },
+      });
+    },
+    [pushToast]
+  );
+
   const li = levelInfo(gameState.xp);
   const rk = rankFor(li.l);
   const streakN = displayStreak(gameState);
@@ -838,6 +925,10 @@ export default function App() {
               startSession({ mode: 'focus', count: 10, facts: keys });
             }}
             onEditName={() => setNameModalOpen(true)}
+            onExport={handleExportProgress}
+            onImportFile={(file) => {
+              void handleImportFile(file);
+            }}
             onReset={() => {
               setConfirmState({
                 text: 'Стереть весь прогресс, достижения и сертификат? Это необратимо.',

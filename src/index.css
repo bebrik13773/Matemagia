@@ -1330,6 +1330,18 @@ h3 {
   font-size: 0.95rem;
 }
 
+.prof-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.is-hidden-input {
+  display: none;
+}
+
 .ghost-btn {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1341,6 +1353,12 @@ h3 {
   background: rgba(34, 26, 84, 0.4);
 }
 
+.ghost-btn:hover {
+  border-color: rgba(34, 211, 238, 0.55);
+  color: var(--ink);
+  background: rgba(34, 26, 84, 0.7);
+}
+
 .ghost-btn.small {
   padding: 6px 12px;
   font-size: 0.72rem;
@@ -1349,6 +1367,12 @@ h3 {
 .danger-btn {
   border-color: rgba(255, 84, 112, 0.45);
   color: #ffb3c0;
+}
+
+.danger-btn:hover {
+  border-color: rgba(255, 84, 112, 0.8);
+  color: #ffe0e6;
+  background: rgba(255, 84, 112, 0.14);
 }
 
 .primary-btn {
