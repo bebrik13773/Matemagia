@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Question, SessionMode, clamp } from '../game/engine';
+import { PetMood, PetSkin, Question, SessionMode, clamp, getPetStage } from '../game/engine';
+import { CaterpillarPet } from './CaterpillarPet';
 
 export interface ActiveFeedback {
   ok: boolean;
@@ -18,6 +19,8 @@ interface GameScreenProps {
   feedback: ActiveFeedback | null;
   paused: boolean;
   modalOpen: boolean;
+  petSkin: PetSkin;
+  petFed: number;
   onAnswer: (idx: number | null, elapsed: number, tileRect?: DOMRect) => void;
   onPause: () => void;
   onQuit: () => void;
@@ -35,6 +38,8 @@ export function GameScreen({
   feedback,
   paused,
   modalOpen,
+  petSkin,
+  petFed,
   onAnswer,
   onPause,
   onQuit,
@@ -111,6 +116,31 @@ export function GameScreen({
 
   const progressPct = ((feedback ? index + 1 : index) / count) * 100;
   const correctIdx = question.options.indexOf(question.ans);
+  const petStage = getPetStage(petFed);
+
+  const petMood: PetMood = paused
+    ? 'sleepy'
+    : feedback
+      ? feedback.ok
+        ? combo >= 3
+          ? 'excited'
+          : 'eating'
+        : 'sad'
+      : combo >= 3
+        ? 'happy'
+        : petFed === 0
+          ? 'hungry'
+          : 'idle';
+
+  const petSpeech = paused
+    ? 'Хр-р... жду!'
+    : feedback
+      ? feedback.ok
+        ? combo >= 3
+          ? 'Ого, комбо! ✨'
+          : 'Хрум-хрум! 🍃'
+        : 'Ничего, вперёд!'
+      : null;
 
   return (
     <section className="screen-anim" aria-label="Тренировка">
@@ -133,6 +163,20 @@ export function GameScreen({
           <button type="button" className="hud-btn" onClick={onPause} aria-label="Пауза">
             ⏸
           </button>
+        </div>
+
+        <div className="game-pet-bar" aria-label="Питомец в тренировке">
+          <CaterpillarPet
+            skin={petSkin}
+            mood={petMood}
+            segments={petStage.segments}
+            compact
+            speech={petSpeech}
+          />
+          <div className="pet-feed-pill">
+            <span>{petSkin.icon}</span>
+            <span>🍃 {petFed}</span>
+          </div>
         </div>
 
         <div className="qcard" id="qcard">

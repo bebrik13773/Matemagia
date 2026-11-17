@@ -3,21 +3,32 @@ import assert from 'node:assert/strict';
 import {
   FACTS,
   FKEYS,
+  PET_SKINS,
   buildExamQueue,
   calculateGrade,
   calculateQuestionXp,
   checkAchievements,
+  chooseMode,
   createDefaultState,
   dayKey,
   esc,
+  factCurriculumTier,
+  factTimeVariance,
   genOptions,
+  getAdaptiveCourse,
+  getEquippedPetSkin,
+  getPetStage,
   getStreakBonus,
+  getUnlockedPetSkins,
+  isPetSkinUnlocked,
   levelInfo,
   makeQuestion,
   mastery,
+  mergeLoadedState,
   overallMastery,
   rankFor,
   recordStat,
+  spacedIntervalDays,
 } from './engine';
 
 test('esc escapes all HTML special characters including single quote without syntax error', () => {
@@ -119,4 +130,60 @@ test('getStreakBonus grants progressive XP multipliers and badges for returning 
   assert.equal(day7.bonusPercent, 50);
   assert.equal(day7.badgeTitle, 'Неделя магии');
   assert.equal(day7.nextTierDays, null);
+});
+
+test('pet skins unlock by level and pet stage grows with fed count', () => {
+  assert.equal(getUnlockedPetSkins(1).length, 1);
+  assert.equal(getUnlockedPetSkins(3).length, 3);
+  assert.equal(getUnlockedPetSkins(8).length, PET_SKINS.length);
+  assert.equal(isPetSkinUnlocked(PET_SKINS[1], 1), false);
+  assert.equal(isPetSkinUnlocked(PET_SKINS[1], 2), true);
+
+  const s = mergeLoadedState({ xp: 0, pet: { fed: 12, skin: 'royal' } });
+  assert.equal(s.ambient, true);
+  assert.equal(getEquippedPetSkin(s).id, 'meadow');
+
+  s.xp = 1500;
+  assert.ok(levelInfo(s.xp).l >= 5);
+
+  assert.equal(getPetStage(0).title, 'Малышка');
+  assert.equal(getPetStage(25).title, 'Умняшка');
+  assert.equal(getPetStage(105).title, 'Легенда листа');
+});
+
+test('adaptive course analyzes response times, variance, spaced intervals, and mode lag', () => {
+  const s = createDefaultState();
+  const now = new Date(2026, 10, 17, 12, 0, 0).getTime();
+
+  // Fresh state starts on Stage 1 focusing on tier-1 anchor facts
+  const initialPlan = getAdaptiveCourse(s, now);
+  assert.equal(initialPlan.stage, 1);
+  assert.ok(initialPlan.focusPool.every((k) => factCurriculumTier(k) === 1));
+
+  // Steady fast times vs erratic hesitant times
+  s.facts['2,2'] = {
+    n: 4, c: 4, w: 0, ema: 1.6, best: 1.4, lastWrong: false, seen: now,
+    mn: 2, mc: 2, dn: 2, dc: 2, mEma: 1.5, dEma: 1.7,
+    lastTimes: [1.5, 1.6, 1.5, 1.7], streak: 4, slowCount: 0,
+  };
+  s.facts['7,8'] = {
+    n: 4, c: 4, w: 0, ema: 3.8, best: 1.9, lastWrong: false, seen: now,
+    mn: 2, mc: 2, dn: 2, dc: 2, mEma: 2.0, dEma: 5.5,
+    lastTimes: [1.9, 6.2, 2.1, 5.4], streak: 4, slowCount: 2,
+  };
+
+  assert.ok(factTimeVariance(s.facts['7,8']) > factTimeVariance(s.facts['2,2']));
+  assert.ok(mastery(s, '2,2', now) > mastery(s, '7,8', now));
+  assert.ok(spacedIntervalDays(s.facts['2,2']) > spacedIntervalDays(s.facts['7,8']));
+
+  // chooseMode favors division when division EMA lags multiplication EMA significantly
+  let divPicks = 0;
+  for (let i = 0; i < 200; i++) {
+    if (chooseMode(s.facts['7,8']) === 'div') divPicks++;
+  }
+  assert.ok(divPicks > 115);
+
+  const courseWithSlowFact = getAdaptiveCourse(s, now);
+  assert.ok(courseWithSlowFact.focusPool.includes('7,8'));
+  assert.ok(courseWithSlowFact.hesitantCount >= 1);
 });

@@ -12,13 +12,16 @@ import {
   PauseModal,
 } from './components/Overlays';
 import { ResultsScreen, SessionSummary } from './components/ResultsScreen';
+import { PetScreen } from './components/PetScreen';
+import { ExamScreen } from './components/ExamScreen';
 import { StarfieldFx, StarfieldFxHandle } from './components/StarfieldFx';
-import { ensureAudio, setSoundEnabled, sfx } from './game/audio';
+import { ensureAudio, setAmbientEnabled, setSoundEnabled, sfx } from './game/audio';
 import {
   COLORS,
   Difficulty,
   FKEYS,
   GameState,
+  PET_SKINS,
   PRAISE,
   Question,
   QuestionMode,
@@ -34,6 +37,7 @@ import {
   cloneState,
   createDefaultState,
   displayStreak,
+  getEquippedPetSkin,
   getStreakBonus,
   levelInfo,
   makeQuestion,
@@ -45,7 +49,7 @@ import {
   snapshotMastery,
 } from './game/engine';
 
-type Screen = 'hub' | 'map' | 'ach' | 'game' | 'results';
+type Screen = 'hub' | 'pet' | 'map' | 'exam' | 'ach' | 'game' | 'results';
 
 interface ToastItem {
   id: number;
@@ -154,6 +158,10 @@ export default function App() {
   useEffect(() => {
     setSoundEnabled(gameState.sound);
   }, [gameState.sound]);
+
+  useEffect(() => {
+    setAmbientEnabled(gameState.ambient);
+  }, [gameState.ambient]);
 
   useEffect(() => {
     const onPointerDown = () => {
@@ -446,6 +454,14 @@ export default function App() {
         pendingLevelRef.current = Math.max(pendingLevelRef.current || 0, levelAfter);
         sfx.level();
         pushToast('⬆️', 'Новый уровень!', `Ур. ${levelAfter} — ${rankFor(levelAfter).name}`);
+        const newSkins = PET_SKINS.filter(
+          (s) => s.unlockLevel > levelBefore && s.unlockLevel <= levelAfter
+        );
+        newSkins.forEach((skin, idx) => {
+          window.setTimeout(() => {
+            pushToast(skin.icon, 'Новый скин гусеницы!', `${skin.name} · Ур. ${skin.unlockLevel}`);
+          }, (idx + 1) * 450);
+        });
         if (tbLevelRef.current) {
           const r = tbLevelRef.current.getBoundingClientRect();
           fxRef.current?.burst(r.left + r.width / 2, r.top + r.height / 2, {
@@ -456,7 +472,9 @@ export default function App() {
       }
 
       if (ok) {
+        nextState.pet.fed = (nextState.pet.fed || 0) + 1;
         sfx.ok(nextCombo);
+        sfx.munch();
         if (tileRect) {
           fxRef.current?.burst(tileRect.left + tileRect.width / 2, tileRect.top + tileRect.height / 2, {
             n: 26,
@@ -553,11 +571,15 @@ export default function App() {
     (target: Screen) => {
       if (sessionRef.current) {
         const label =
-          target === 'map'
-            ? 'Прервать занятие и открыть карту? Ответы сохранятся.'
-            : target === 'ach'
-              ? 'Прервать занятие и открыть достижения? Ответы сохранятся.'
-              : 'Прервать занятие и вернуться в штаб? Ответы сохранятся.';
+          target === 'pet'
+            ? 'Прервать занятие и открыть питомца? Ответы сохранятся.'
+            : target === 'map'
+              ? 'Прервать занятие и открыть карту? Ответы сохранятся.'
+              : target === 'exam'
+                ? 'Прервать занятие и перейти к финальному тесту? Ответы сохранятся.'
+                : target === 'ach'
+                  ? 'Прервать занятие и открыть достижения? Ответы сохранятся.'
+                  : 'Прервать занятие и вернуться в штаб? Ответы сохранятся.';
         setConfirmState({
           text: label,
           cb: () => finishToHub(target),
@@ -739,6 +761,30 @@ export default function App() {
           )}
           <button
             type="button"
+            className={`icon-btn ${gameState.ambient && gameState.sound ? '' : 'muted'}`}
+            id="ambientBtn"
+            aria-label={gameState.ambient ? 'Выключить фоновую музыку' : 'Включить фоновую музыку'}
+            aria-pressed={gameState.ambient}
+            title={gameState.ambient ? 'Фоновая музыка вкл.' : 'Фоновая музыка выкл.'}
+            onClick={() => {
+              ensureAudio();
+              const nextAmbient = !gameState.ambient;
+              const next = { ...gameState, ambient: nextAmbient };
+              setAmbientEnabled(nextAmbient);
+              setGameState(next);
+              persistState(next);
+              if (gameState.sound) sfx.click();
+              pushToast(
+                nextAmbient ? '🎵' : '🔕',
+                nextAmbient ? 'Фоновая музыка включена' : 'Фоновая музыка выключена',
+                nextAmbient && !gameState.sound ? 'Включи общий звук (🔊), чтобы слышать' : ''
+              );
+            }}
+          >
+            {gameState.ambient ? '🎵' : '🔕'}
+          </button>
+          <button
+            type="button"
             className={`icon-btn ${gameState.sound ? '' : 'muted'}`}
             id="soundBtn"
             aria-label={gameState.sound ? 'Выключить звук' : 'Включить звук'}
@@ -765,13 +811,13 @@ export default function App() {
         {screen === 'hub' && (
           <HubScreen
             state={gameState}
+            onStartCourse={(focusPool) => {
+              sfx.click();
+              startSession({ mode: 'train', count: 12, facts: focusPool });
+            }}
             onTrain={() => {
               sfx.click();
               startSession({ mode: 'train', count: 12 });
-            }}
-            onExam={() => {
-              sfx.click();
-              setExamModalOpen(true);
             }}
             onCertOpen={() => {
               sfx.click();
@@ -791,8 +837,6 @@ export default function App() {
               sfx.click();
               startSession({ mode: 'focus', count: 10, facts: keys });
             }}
-            onOpenMap={() => requestNav('map')}
-            onOpenAch={() => requestNav('ach')}
             onEditName={() => setNameModalOpen(true)}
             onReset={() => {
               setConfirmState({
@@ -808,6 +852,27 @@ export default function App() {
                 },
               });
             }}
+          />
+        )}
+
+        {screen === 'pet' && (
+          <PetScreen
+            state={gameState}
+            onSelectPetSkin={(skinId: string) => {
+              const next = { ...gameState, pet: { ...gameState.pet, skin: skinId } };
+              setGameState(next);
+              persistState(next);
+              sfx.click();
+              const chosen = PET_SKINS.find((s) => s.id === skinId);
+              if (chosen) {
+                pushToast(chosen.icon, 'Скин гусеницы надет!', chosen.name);
+              }
+            }}
+            onTrain={() => {
+              sfx.click();
+              startSession({ mode: 'train', count: 12 });
+            }}
+            onBackToHub={() => requestNav('hub')}
           />
         )}
 
@@ -832,6 +897,30 @@ export default function App() {
           />
         )}
 
+        {screen === 'exam' && (
+          <ExamScreen
+            state={gameState}
+            onStartExam={(name) => {
+              if (name && name !== gameState.name) {
+                const next = { ...gameState, name };
+                setGameState(next);
+                persistState(next);
+              }
+              sfx.click();
+              startSession({ mode: 'exam', count: 36 });
+            }}
+            onCertOpen={() => {
+              sfx.click();
+              setCertModalOpen(true);
+            }}
+            onFocusWeak={(keys) => {
+              sfx.click();
+              startSession({ mode: 'focus', count: 10, facts: keys });
+            }}
+            onBackToHub={() => requestNav('hub')}
+          />
+        )}
+
         {screen === 'ach' && (
           <AchScreen state={gameState} onBackToHub={() => requestNav('hub')} />
         )}
@@ -847,6 +936,8 @@ export default function App() {
             feedback={session.feedback}
             paused={session.paused}
             modalOpen={modalOpen}
+            petSkin={getEquippedPetSkin(gameState)}
+            petFed={gameState.pet.fed}
             onAnswer={handleAnswer}
             onPause={() => {
               if (!session.feedback && !session.paused) {
@@ -897,10 +988,24 @@ export default function App() {
         </button>
         <button
           type="button"
+          className={`nav-btn ${screen === 'pet' ? 'active' : ''}`}
+          onClick={() => requestNav('pet')}
+        >
+          <span className="ni">🐛</span>Питомец
+        </button>
+        <button
+          type="button"
           className={`nav-btn ${screen === 'map' ? 'active' : ''}`}
           onClick={() => requestNav('map')}
         >
           <span className="ni">🗺️</span>Карта
+        </button>
+        <button
+          type="button"
+          className={`nav-btn ${screen === 'exam' ? 'active' : ''}`}
+          onClick={() => requestNav('exam')}
+        >
+          <span className="ni">🎓</span>Экзамен
         </button>
         <button
           type="button"

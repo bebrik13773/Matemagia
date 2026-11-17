@@ -1,17 +1,13 @@
 import {
-  ACH,
-  COLORS,
   Difficulty,
   GameState,
-  colorClass,
   displayStreak,
-  factsSeen,
   fmtDate,
   fmtK,
+  getAdaptiveCourse,
   getStreakBonus,
   levelInfo,
   limitPreview,
-  masteredCount,
   overallMastery,
   rankFor,
   weakList,
@@ -19,26 +15,22 @@ import {
 
 interface HubScreenProps {
   state: GameState;
+  onStartCourse: (focusPool: string[]) => void;
   onTrain: () => void;
-  onExam: () => void;
   onCertOpen: () => void;
   onDiffChange: (diff: Difficulty) => void;
   onFocusWeak: (keys: string[]) => void;
-  onOpenMap: () => void;
-  onOpenAch: () => void;
   onEditName: () => void;
   onReset: () => void;
 }
 
 export function HubScreen({
   state,
+  onStartCourse,
   onTrain,
-  onExam,
   onCertOpen,
   onDiffChange,
   onFocusWeak,
-  onOpenMap,
-  onOpenAch,
   onEditName,
   onReset,
 }: HubScreenProps) {
@@ -50,25 +42,7 @@ export function HubScreen({
   const tempo = state.totals.ema ? `${state.totals.ema.toFixed(1)} с` : '—';
   const st = displayStreak(state);
   const streakBonus = getStreakBonus(state);
-  const seenWeak = weak.filter((w) => w.st && w.st.n > 0);
-  const trainSub = seenWeak.length
-    ? `Слабые: ${seenWeak
-        .slice(0, 2)
-        .map((w) => fmtK(w.k))
-        .join(', ')}`
-    : '12 заданий · умный подбор';
-  const readyC = om >= 85 ? COLORS.lime : om >= 60 ? COLORS.amber : COLORS.magenta;
-  const circ = 106.8;
-  const off = (circ * (1 - om / 100)).toFixed(1);
-  const achN = Object.keys(state.ach).length;
-
-  const miniCells: Array<{ id: string; cls: string }> = [];
-  for (let a = 2; a <= 9; a++) {
-    for (let b = 2; b <= 9; b++) {
-      const k = `${Math.min(a, b)},${Math.max(a, b)}`;
-      miniCells.push({ id: `${a}-${b}`, cls: colorClass(state, k) });
-    }
-  }
+  const course = getAdaptiveCourse(state);
 
   const diffOptions: Array<{ id: Difficulty; label: string }> = [
     { id: 'calm', label: 'Спокойный' },
@@ -161,6 +135,7 @@ export function HubScreen({
               })}
             </div>
           </div>
+
           <div className="seg-label">Строгость таймера</div>
           <div className="seg" role="group" aria-label="Строгость таймера">
             {diffOptions.map((opt) => (
@@ -176,59 +151,47 @@ export function HubScreen({
             ))}
           </div>
           <p className="hint">
-            Идеальный таймер считается по твоим прошлым ответам: отвечаешь быстрее — лимит
-            сжимается. Скорость и точность формируют % усвоения каждого примера.
+            Алгоритм учитывает время, разброс скорости и ошибки по каждому примеру и подстраивает
+            таймер отдельно для умножения и деления.
           </p>
         </div>
 
         <div className="actions">
-          <button type="button" className="big-btn train" onClick={onTrain}>
+          <div className="card course-card" aria-label="Автоматический курс обучения">
+            <div className="course-top">
+              <span className="course-stage">{course.stageTitle}</span>
+              <span className="course-pct">{course.stageProgressPct}%</span>
+            </div>
+            <div className="bar" style={{ marginBottom: 12 }}>
+              <i style={{ width: `${course.stageProgressPct}%` }} />
+            </div>
+            <div className="course-title">🧠 {course.lessonTitle}</div>
+            <p className="course-reason">{course.lessonReason}</p>
+            <div className="course-metrics">
+              {course.weakCount > 0 && <span>⚠️ Слабых: {course.weakCount}</span>}
+              {course.hesitantCount > 0 && <span>⏱ Нестабильных: {course.hesitantCount}</span>}
+              {course.dueCount > 0 && <span>🔁 Повтор: {course.dueCount}</span>}
+              {course.divLagPct >= 15 && <span>➗ Деление +{course.divLagPct}%</span>}
+            </div>
+            <div className="course-focus">
+              Подборка: {course.focusPool.slice(0, 4).map(fmtK).join(' · ')}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="big-btn train"
+            onClick={() => onStartCourse(course.focusPool)}
+          >
             <span className="bb-ico">⚡</span>
             <span>
-              <span className="bb-t">Тренировка</span>
-              <span className="bb-s">{trainSub}</span>
+              <span className="bb-t">Урок курса</span>
+              <span className="bb-s">12 заданий · автоподбор по твоим ответам</span>
             </span>
           </button>
 
-          <button type="button" className="big-btn exam" onClick={onExam}>
-            <span className="bb-ico">🎓</span>
-            <span>
-              <span className="bb-t">Экзамен</span>
-              <span className="bb-s">36 заданий · вся таблица · готовность {om}%</span>
-            </span>
-            <svg className="exam-ring" width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
-              <circle
-                cx="23"
-                cy="23"
-                r="17"
-                fill="none"
-                stroke="rgba(255,255,255,.25)"
-                strokeWidth="5"
-              />
-              <circle
-                cx="23"
-                cy="23"
-                r="17"
-                fill="none"
-                stroke={readyC}
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray={circ}
-                strokeDashoffset={off}
-                transform="rotate(-90 23 23)"
-              />
-              <text
-                x="23"
-                y="27"
-                textAnchor="middle"
-                fontSize="11"
-                fontWeight="900"
-                fill="#fff"
-                fontFamily="Nunito"
-              >
-                {om}
-              </text>
-            </svg>
+          <button type="button" className="ghost-btn free-train-btn" onClick={onTrain}>
+            🎲 Свободная тренировка (вся таблица)
           </button>
 
           {state.cert && (
@@ -240,28 +203,6 @@ export function HubScreen({
               </span>
             </button>
           )}
-        </div>
-
-        <div className="card steps">
-          <div className="step">
-            <i>1</i>
-            <span>
-              <b>Тренируйся</b> — алгоритм следит за точностью и скоростью и чаще даёт слабые
-              примеры.
-            </span>
-          </div>
-          <div className="step">
-            <i>2</i>
-            <span>
-              <b>Закрашивай карту</b> — каждое семейство примеров прокачивается до «мастера».
-            </span>
-          </div>
-          <div className="step">
-            <i>3</i>
-            <span>
-              <b>Сдай экзамен 36/36</b> — и получи именной сертификат Академии. 📜
-            </span>
-          </div>
         </div>
 
         <div className="card weak-card">
@@ -291,50 +232,8 @@ export function HubScreen({
           </button>
         </div>
 
-        <div className="card map-card">
-          <h3>🗺️ Карта таблицы</h3>
-          <div className="mini-map" aria-hidden="true">
-            {miniCells.map((cell) => (
-              <span key={cell.id} className={`mm-cell ${cell.cls}`} />
-            ))}
-          </div>
-          <p className="hint" style={{ marginBottom: 12 }}>
-            Мастеров: <b style={{ color: 'var(--lime)' }}>{masteredCount(state)}</b> из 36 ·
-            встречено {factsSeen(state)}
-          </p>
-          <button
-            type="button"
-            className="ghost-btn"
-            style={{ width: '100%' }}
-            onClick={onOpenMap}
-          >
-            Открыть карту →
-          </button>
-        </div>
-
-        <div className="side">
-          <div className="card">
-            <h3>
-              🏆 Достижения · {achN}/{ACH.length}
-            </h3>
-            <div className="ach-icons">
-              {ACH.slice(0, 8).map((a) => (
-                <span key={a.id} className={state.ach[a.id] ? '' : 'lock'} title={a.t}>
-                  {state.ach[a.id] ? a.icon : '🔒'}
-                </span>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="ghost-btn"
-              style={{ width: '100%' }}
-              onClick={onOpenAch}
-            >
-              Все достижения →
-            </button>
-          </div>
-
-          <div className="card">
+        <div className="card profile-card">
+          <div>
             <div className="prof-row">
               <span className="prof-name">👤 {state.name}</span>
               <button type="button" className="ghost-btn small" onClick={onEditName}>
@@ -349,13 +248,14 @@ export function HubScreen({
               <br />
               Экзамен: лучший результат <b>{state.exam.best}/36</b>
             </p>
-            <p className="hint" style={{ marginBottom: 12 }}>
-              💾 Прогресс автоматически сохраняется в этом браузере.
+            <p className="hint" style={{ marginBottom: 14 }}>
+              💾 Прогресс сохраняется автоматически. Питомец, карта, финальный тест и награды — во
+              вкладках ниже.
             </p>
-            <button type="button" className="ghost-btn small danger-btn" onClick={onReset}>
-              Сбросить прогресс
-            </button>
           </div>
+          <button type="button" className="ghost-btn small danger-btn" onClick={onReset}>
+            Сбросить прогресс
+          </button>
         </div>
       </div>
     </section>
