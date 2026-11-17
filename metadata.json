@@ -1,0 +1,6 @@
+{
+  "name": "Матемагия",
+  "description": "Умный тренажёр таблицы умножения и деления с адаптивным подбором примеров, картой усвоения, достижениями и выпускным экзаменом.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
