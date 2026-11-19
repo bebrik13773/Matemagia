@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AchScreen } from './components/AchScreen';
-import { ActiveFeedback, GameScreen } from './components/GameScreen';
+import { ActiveFeedback, AnswerSubmission, GameScreen } from './components/GameScreen';
 import { HubScreen } from './components/HubScreen';
 import { MapScreen } from './components/MapScreen';
 import {
   CertModal,
   ConfirmModal,
-  ExamModal,
+  ExamReadinessModal,
   LevelModal,
   NameModal,
   PauseModal,
 } from './components/Overlays';
+import { OnboardingTour } from './components/OnboardingTour';
 import { ResultsScreen, SessionSummary } from './components/ResultsScreen';
 import { PetScreen } from './components/PetScreen';
 import { ExamScreen } from './components/ExamScreen';
@@ -38,17 +39,23 @@ import {
   createDefaultState,
   displayStreak,
   fmtDate,
+  getAdaptiveCourse,
   getEquippedPetSkin,
+  getPetStage,
   getStreakBonus,
   levelInfo,
   makeQuestion,
   mergeLoadedState,
+  needsExamReadinessWarning,
+  overallMastery,
   pickFact,
   rankFor,
   recordStat,
   rndi,
   snapshotMastery,
+  weakList,
 } from './game/engine';
+import { TOUR_STEPS } from './game/tour';
 import {
   MAX_IMPORT_FILE_BYTES,
   applyStorageSnapshot,
@@ -119,9 +126,11 @@ export default function App() {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<{ text: string; cb: () => void } | null>(null);
   const [nameModalOpen, setNameModalOpen] = useState(false);
-  const [examModalOpen, setExamModalOpen] = useState(false);
+  const [examReadinessWarnOpen, setExamReadinessWarnOpen] = useState(false);
   const [levelUpModal, setLevelUpModal] = useState<number | null>(null);
   const [certModalOpen, setCertModalOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastSeqRef = useRef(0);
@@ -129,7 +138,6 @@ export default function App() {
   const tokenSeqRef = useRef(0);
   const advanceTimerRef = useRef<number | null>(null);
   const pendingLevelRef = useRef<number | null>(null);
-  const questionShownAtRef = useRef<number>(performance.now());
 
   const fxRef = useRef<StarfieldFxHandle | null>(null);
   const tbLevelRef = useRef<HTMLDivElement | null>(null);
@@ -139,9 +147,10 @@ export default function App() {
     pauseOpen ||
     Boolean(confirmState) ||
     nameModalOpen ||
-    examModalOpen ||
+    examReadinessWarnOpen ||
     Boolean(levelUpModal) ||
-    certModalOpen;
+    certModalOpen ||
+    tourOpen;
 
   const pushToast = useCallback((icon: string, title: string, sub: string, type?: 'ach') => {
     const id = ++toastSeqRef.current;
@@ -255,19 +264,72 @@ export default function App() {
         queue,
       };
       setPauseOpen(false);
-      questionShownAtRef.current = performance.now();
+      setTourOpen(false);
       setSession(nextSession);
       navigateTo('game');
     },
     [buildNextQuestion, navigateTo]
   );
 
+  const startTour = useCallback(() => {
+    const launch = () => {
+      sfx.click();
+      setTourStepIndex(0);
+      setTourOpen(true);
+      navigateTo(TOUR_STEPS[0].screen);
+    };
+    if (sessionRef.current) {
+      setConfirmState({
+        text: 'Прервать занятие и открыть обучение от гусеницы? Ответы сохранятся.',
+        cb: () => {
+          if (advanceTimerRef.current) {
+            clearTimeout(advanceTimerRef.current);
+            advanceTimerRef.current = null;
+          }
+          setSession(null);
+          setPauseOpen(false);
+          persistState(stateRef.current);
+          launch();
+        },
+      });
+      return;
+    }
+    launch();
+  }, [navigateTo, persistState]);
+
+  const goToTourStep = useCallback(
+    (nextIndex: number) => {
+      const clamped = Math.max(0, Math.min(TOUR_STEPS.length - 1, nextIndex));
+      sfx.click();
+      setTourStepIndex(clamped);
+      navigateTo(TOUR_STEPS[clamped].screen);
+    },
+    [navigateTo]
+  );
+
+  const finishTour = useCallback(() => {
+    sfx.click();
+    setTourOpen(false);
+    if (!stateRef.current.tutorialDone) {
+      const next = { ...stateRef.current, tutorialDone: true };
+      setGameState(next);
+      persistState(next);
+    }
+    navigateTo('hub');
+  }, [navigateTo, persistState]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
       startSession({ mode: 'train', count: 12 });
+      return;
     }
-  }, [startSession]);
+    if (!stateRef.current.tutorialDone) {
+      setTourStepIndex(0);
+      setTourOpen(true);
+      navigateTo(TOUR_STEPS[0].screen);
+    }
+  }, [navigateTo, startSession]);
 
   const finishSession = useCallback(
     (curSession: ActiveSession) => {
@@ -396,7 +458,6 @@ export default function App() {
         curSession.focus,
         curSession.recent
       );
-      questionShownAtRef.current = performance.now();
       setSession({
         ...curSession,
         index: nextIndex,
@@ -408,13 +469,42 @@ export default function App() {
     [buildNextQuestion, finishSession]
   );
 
+  useEffect(() => {
+    if (!session || !session.feedback || session.paused || modalOpen) return;
+    const tok = session.token;
+    const delay = session.feedback.ok ? 950 : 1900;
+    const timerId = window.setTimeout(() => {
+      if (sessionRef.current && sessionRef.current.token === tok) {
+        advanceQuestion(sessionRef.current);
+      }
+    }, delay);
+    advanceTimerRef.current = timerId;
+    return () => {
+      window.clearTimeout(timerId);
+      if (advanceTimerRef.current === timerId) {
+        advanceTimerRef.current = null;
+      }
+    };
+  }, [advanceQuestion, modalOpen, session]);
+
   const handleAnswer = useCallback(
-    (idx: number | null, elapsed: number, tileRect?: DOMRect) => {
+    (submission: AnswerSubmission | null, elapsed: number, tileRect?: DOMRect) => {
       const cur = sessionRef.current;
       if (!cur || cur.feedback || cur.paused || modalOpen) return;
 
       const q = cur.question;
-      const ok = idx !== null && q.options[idx] === q.ans;
+      const pickedIdx = submission?.idx ?? null;
+      const pickedValue =
+        submission?.value !== undefined && submission?.value !== null
+          ? submission.value
+          : pickedIdx !== null
+            ? (q.options[pickedIdx] ?? null)
+            : null;
+      const ok =
+        submission !== null &&
+        (cur.mode === 'exam'
+          ? pickedValue !== null && pickedValue === q.ans
+          : pickedIdx !== null && q.options[pickedIdx] === q.ans);
       const nextState = cloneState(stateRef.current);
       const streakBefore = displayStreak(nextState);
       const dayBefore = nextState.streak.day;
@@ -501,7 +591,7 @@ export default function App() {
             });
           }
         }
-      } else if (idx === null) {
+      } else if (submission === null) {
         sfx.timeout();
       } else {
         sfx.bad();
@@ -538,7 +628,7 @@ export default function App() {
             k: q.k,
             ok,
             t: elapsed,
-            timeout: idx === null,
+            timeout: submission === null,
             eq: `${q.x} ${q.sym} ${q.y}`,
             ans: q.ans,
             mode: q.mode,
@@ -546,21 +636,16 @@ export default function App() {
         ],
         feedback: {
           ok,
-          timeout: idx === null,
-          pickedIdx: idx,
+          timeout: submission === null,
+          pickedIdx,
+          pickedValue,
           text: fbText,
         },
       };
 
       setSession(updatedSession);
-      const tok = updatedSession.token;
-      advanceTimerRef.current = window.setTimeout(() => {
-        if (sessionRef.current && sessionRef.current.token === tok) {
-          advanceQuestion(sessionRef.current);
-        }
-      }, ok ? 950 : 1900);
     },
-    [advanceQuestion, modalOpen, persistState, pushToast]
+    [modalOpen, persistState, pushToast]
   );
 
   const finishToHub = useCallback(
@@ -621,8 +706,8 @@ export default function App() {
           e.preventDefault();
           return;
         }
-        if (examModalOpen) {
-          setExamModalOpen(false);
+        if (examReadinessWarnOpen) {
+          setExamReadinessWarnOpen(false);
           e.preventDefault();
           return;
         }
@@ -636,30 +721,21 @@ export default function App() {
           e.preventDefault();
           return;
         }
-        if (sessionRef.current && !sessionRef.current.feedback && !sessionRef.current.paused) {
+        if (
+          screen === 'game' &&
+          sessionRef.current &&
+          !sessionRef.current.feedback &&
+          !sessionRef.current.paused
+        ) {
           setSession((s) => (s ? { ...s, paused: true } : null));
           setPauseOpen(true);
         }
         return;
       }
 
-      if (modalOpen) return;
+      if (modalOpen || e.ctrlKey || e.metaKey || e.altKey) return;
       const cur = sessionRef.current;
       if (!cur || screen !== 'game') return;
-
-      if (['1', '2', '3', '4'].includes(e.key)) {
-        const idx = Number(e.key) - 1;
-        const tiles = document.querySelectorAll<HTMLButtonElement>('#answers .tile');
-        const correctIdx = cur.question.options.indexOf(cur.question.ans);
-        const rect = tiles[correctIdx]?.getBoundingClientRect();
-        const elapsed = Math.min(
-          cur.question.limit,
-          Math.max(0.05, (performance.now() - questionShownAtRef.current) / 1000)
-        );
-        handleAnswer(idx, elapsed, rect);
-        e.preventDefault();
-        return;
-      }
 
       if (e.key === ' ' || e.key === 'Enter') {
         if (cur.feedback && advanceTimerRef.current) {
@@ -677,8 +753,7 @@ export default function App() {
     advanceQuestion,
     certModalOpen,
     confirmState,
-    examModalOpen,
-    handleAnswer,
+    examReadinessWarnOpen,
     levelUpModal,
     modalOpen,
     nameModalOpen,
@@ -703,32 +778,108 @@ export default function App() {
       bg.addColorStop(1, '#170f38');
       x.fillStyle = bg;
       x.fillRect(0, 0, w, h);
-      x.lineWidth = 6;
+
+      x.lineWidth = 8;
       x.strokeStyle = '#f5c451';
       x.strokeRect(28, 28, w - 56, h - 56);
+      x.lineWidth = 2;
+      x.strokeStyle = 'rgba(245, 196, 81, 0.35)';
+      x.strokeRect(46, 46, w - 92, h - 92);
+
       x.textAlign = 'center';
       x.font = '700 30px sans-serif';
       x.fillStyle = '#b9aee0';
-      x.fillText('✦ АКАДЕМИЯ МАТЕМАГИИ ✦', w / 2, 140);
+      x.fillText('✦ АКАДЕМИЯ МАТЕМАГИИ ✦', w / 2, 138);
+
       x.font = '900 108px sans-serif';
       x.fillStyle = '#f5c451';
-      x.fillText('СЕРТИФИКАТ', w / 2, 268);
+      x.fillText('СЕРТИФИКАТ', w / 2, 264);
+
       x.font = '800 34px sans-serif';
       x.fillStyle = '#f4eeff';
-      x.fillText('о полном усвоении таблицы умножения и деления', w / 2, 330);
+      x.fillText('о полном усвоении таблицы умножения и деления', w / 2, 326);
+
       x.font = '700 28px sans-serif';
       x.fillStyle = '#8d80b8';
-      x.fillText('награждается', w / 2, 412);
+      x.fillText('награждается', w / 2, 408);
+
       x.font = '900 84px sans-serif';
       x.fillStyle = '#22d3ee';
-      x.fillText(c.name, w / 2, 505);
+      x.fillText(c.name, w / 2, 502);
+
+      x.strokeStyle = 'rgba(245, 196, 81, 0.5)';
+      x.lineWidth = 3;
+      x.beginPath();
+      x.moveTo(w / 2 - 260, 528);
+      x.lineTo(w / 2 + 260, 528);
+      x.stroke();
+
       x.font = '800 30px sans-serif';
       x.fillStyle = '#b9aee0';
       x.fillText(
-        'за идеальный выпускной экзамен: 36 из 36 примеров без единой ошибки',
+        'за идеальный выпускной экзамен — все 36 примеров без единой ошибки',
         w / 2,
-        600
+        595
       );
+
+      const statItems = [
+        { val: '36/36', lbl: 'ЭКЗАМЕН', color: '#a3e635' },
+        { val: `${c.avg.toFixed(1)} с`, lbl: 'СР. ВРЕМЯ', color: '#22d3ee' },
+        { val: `${c.mastery}%`, lbl: 'УСВОЕНИЕ', color: '#fbbf24' },
+        { val: fmtDate(c.date), lbl: 'ДАТА', color: '#f4eeff' },
+      ];
+      const colPositions = [w * 0.2, w * 0.4, w * 0.6, w * 0.8];
+      statItems.forEach((st, idx) => {
+        const cx = colPositions[idx];
+        x.font = '800 44px sans-serif';
+        x.fillStyle = st.color;
+        x.fillText(st.val, cx, 725);
+        x.font = '800 20px sans-serif';
+        x.fillStyle = '#8d80b8';
+        x.fillText(st.lbl, cx, 762);
+      });
+
+      // Bottom ID, rector signature, and seal
+      x.textAlign = 'left';
+      x.font = '800 24px sans-serif';
+      x.fillStyle = '#8d80b8';
+      x.fillText(`№ ${c.id}`, 110, 955);
+      x.fillText('Академия Матемагии', 110, 992);
+
+      x.textAlign = 'center';
+      x.strokeStyle = 'rgba(141, 128, 184, 0.45)';
+      x.lineWidth = 2;
+      x.beginPath();
+      x.moveTo(w / 2 - 170, 932);
+      x.lineTo(w / 2 + 170, 932);
+      x.stroke();
+      x.font = '800 26px sans-serif';
+      x.fillStyle = '#b9aee0';
+      x.fillText('Архимаг Числов', w / 2, 968);
+      x.font = '700 21px sans-serif';
+      x.fillStyle = '#8d80b8';
+      x.fillText('ректор академии', w / 2, 998);
+
+      const sealX = w - 190;
+      const sealY = 955;
+      const sealR = 72;
+      const sealGrad = x.createRadialGradient(sealX - 18, sealY - 20, 8, sealX, sealY, sealR);
+      sealGrad.addColorStop(0, '#ffe9b0');
+      sealGrad.addColorStop(0.55, '#f5c451');
+      sealGrad.addColorStop(1, '#c98a1e');
+      x.fillStyle = sealGrad;
+      x.beginPath();
+      x.arc(sealX, sealY, sealR, 0, Math.PI * 2);
+      x.fill();
+      x.lineWidth = 5;
+      x.strokeStyle = '#c98a1e';
+      x.stroke();
+      x.fillStyle = '#5c3a08';
+      x.font = '900 44px sans-serif';
+      x.fillText('✶', sealX, sealY + 4);
+      x.font = '900 22px sans-serif';
+      x.fillText('36/36', sealX, sealY + 34);
+
       const a = document.createElement('a');
       a.download = 'sertifikat-matemagia.png';
       a.href = cv.toDataURL('image/png');
@@ -846,51 +997,66 @@ export default function App() {
               🔥 {streakN}
             </div>
           )}
-          <button
-            type="button"
-            className={`icon-btn ${gameState.ambient && gameState.sound ? '' : 'muted'}`}
-            id="ambientBtn"
-            aria-label={gameState.ambient ? 'Выключить фоновую музыку' : 'Включить фоновую музыку'}
-            aria-pressed={gameState.ambient}
-            title={gameState.ambient ? 'Фоновая музыка вкл.' : 'Фоновая музыка выкл.'}
-            onClick={() => {
-              ensureAudio();
-              const nextAmbient = !gameState.ambient;
-              const next = { ...gameState, ambient: nextAmbient };
-              setAmbientEnabled(nextAmbient);
-              setGameState(next);
-              persistState(next);
-              if (gameState.sound) sfx.click();
-              pushToast(
-                nextAmbient ? '🎵' : '🔕',
-                nextAmbient ? 'Фоновая музыка включена' : 'Фоновая музыка выключена',
-                nextAmbient && !gameState.sound ? 'Включи общий звук (🔊), чтобы слышать' : ''
-              );
-            }}
-          >
-            {gameState.ambient ? '🎵' : '🔕'}
-          </button>
-          <button
-            type="button"
-            className={`icon-btn ${gameState.sound ? '' : 'muted'}`}
-            id="soundBtn"
-            aria-label={gameState.sound ? 'Выключить звук' : 'Включить звук'}
-            onClick={() => {
-              const nextSound = !gameState.sound;
-              const next = { ...gameState, sound: nextSound };
-              setSoundEnabled(nextSound);
-              setGameState(next);
-              persistState(next);
-              if (nextSound) sfx.click();
-              pushToast(
-                nextSound ? '🔊' : '🔇',
-                nextSound ? 'Звук включён' : 'Звук выключен',
-                ''
-              );
-            }}
-          >
-            {gameState.sound ? '🔊' : '🔇'}
-          </button>
+          <div className="tb-controls" data-tour="topbar-controls">
+            <button
+              type="button"
+              className="icon-btn"
+              id="tutorialBtn"
+              aria-label="Обучение от гусеницы"
+              aria-pressed={tourOpen}
+              title="Обучение от гусеницы"
+              onClick={startTour}
+            >
+              ❓
+            </button>
+            <button
+              type="button"
+              className={`icon-btn ${gameState.ambient && gameState.sound ? '' : 'muted'}`}
+              id="ambientBtn"
+              aria-label={gameState.ambient ? 'Выключить фоновую музыку' : 'Включить фоновую музыку'}
+              aria-pressed={gameState.ambient}
+              title={gameState.ambient ? 'Фоновая музыка вкл.' : 'Фоновая музыка выкл.'}
+              onClick={() => {
+                ensureAudio();
+                const nextAmbient = !gameState.ambient;
+                const next = { ...gameState, ambient: nextAmbient };
+                setAmbientEnabled(nextAmbient);
+                setGameState(next);
+                persistState(next);
+                if (gameState.sound) sfx.click();
+                pushToast(
+                  nextAmbient ? '🎵' : '🔕',
+                  nextAmbient ? 'Фоновая музыка включена' : 'Фоновая музыка выключена',
+                  nextAmbient && !gameState.sound ? 'Включи общий звук (🔊), чтобы слышать' : ''
+                );
+              }}
+            >
+              {gameState.ambient ? '🎵' : '🔕'}
+            </button>
+            <button
+              type="button"
+              className={`icon-btn ${gameState.sound ? '' : 'muted'}`}
+              id="soundBtn"
+              aria-label={gameState.sound ? 'Выключить звук' : 'Включить звук'}
+              aria-pressed={gameState.sound}
+              title={gameState.sound ? 'Звук вкл.' : 'Звук выкл.'}
+              onClick={() => {
+                const nextSound = !gameState.sound;
+                const next = { ...gameState, sound: nextSound };
+                setSoundEnabled(nextSound);
+                setGameState(next);
+                persistState(next);
+                if (nextSound) sfx.click();
+                pushToast(
+                  nextSound ? '🔊' : '🔇',
+                  nextSound ? 'Звук включён' : 'Звук выключен',
+                  ''
+                );
+              }}
+            >
+              {gameState.sound ? '🔊' : '🔇'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -933,7 +1099,10 @@ export default function App() {
               setConfirmState({
                 text: 'Стереть весь прогресс, достижения и сертификат? Это необратимо.',
                 cb: () => {
-                  const fresh = createDefaultState();
+                  const fresh = {
+                    ...createDefaultState(),
+                    tutorialDone: stateRef.current.tutorialDone,
+                  };
                   setGameState(fresh);
                   persistState(fresh);
                   setSelectedMapKey(null);
@@ -943,6 +1112,7 @@ export default function App() {
                 },
               });
             }}
+            onStartTour={startTour}
           />
         )}
 
@@ -992,12 +1162,18 @@ export default function App() {
           <ExamScreen
             state={gameState}
             onStartExam={(name) => {
-              if (name && name !== gameState.name) {
-                const next = { ...gameState, name };
-                setGameState(next);
-                persistState(next);
+              const nextName = name || gameState.name;
+              let latestState = gameState;
+              if (nextName && nextName !== gameState.name) {
+                latestState = { ...gameState, name: nextName };
+                setGameState(latestState);
+                persistState(latestState);
               }
               sfx.click();
+              if (needsExamReadinessWarning(overallMastery(latestState))) {
+                setExamReadinessWarnOpen(true);
+                return;
+              }
               startSession({ mode: 'exam', count: 36 });
             }}
             onCertOpen={() => {
@@ -1164,20 +1340,22 @@ export default function App() {
         onClose={() => setNameModalOpen(false)}
       />
 
-      <ExamModal
-        open={examModalOpen}
-        initialName={gameState.name}
-        onStart={(name) => {
-          if (name) {
-            const next = { ...gameState, name };
-            setGameState(next);
-            persistState(next);
-          }
-          setExamModalOpen(false);
+      <ExamReadinessModal
+        open={examReadinessWarnOpen}
+        masteryPct={overallMastery(gameState)}
+        weakCount={getAdaptiveCourse(gameState).weakCount}
+        onConfirmStart={() => {
+          setExamReadinessWarnOpen(false);
           sfx.click();
           startSession({ mode: 'exam', count: 36 });
         }}
-        onClose={() => setExamModalOpen(false)}
+        onRepeatWeak={() => {
+          setExamReadinessWarnOpen(false);
+          sfx.click();
+          const weakKeys = weakList(gameState, 4).map((w) => w.k);
+          startSession({ mode: 'focus', count: 10, facts: weakKeys });
+        }}
+        onCancel={() => setExamReadinessWarnOpen(false)}
       />
 
       <LevelModal level={levelUpModal} onClose={() => setLevelUpModal(null)} />
@@ -1187,6 +1365,17 @@ export default function App() {
         open={certModalOpen}
         onDownload={downloadCert}
         onClose={() => setCertModalOpen(false)}
+      />
+
+      <OnboardingTour
+        open={tourOpen}
+        stepIndex={tourStepIndex}
+        steps={TOUR_STEPS}
+        petSkin={getEquippedPetSkin(gameState)}
+        petSegments={getPetStage(gameState.pet.fed).segments}
+        onNext={() => goToTourStep(tourStepIndex + 1)}
+        onPrev={() => goToTourStep(tourStepIndex - 1)}
+        onFinish={finishTour}
       />
     </>
   );

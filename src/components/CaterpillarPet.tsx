@@ -101,16 +101,18 @@ export function CaterpillarPet({
         )}
 
         {speech && (
-          <motion.div
-            key={speech}
-            className="pet-bubble"
-            initial={{ opacity: 0, y: 6, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            {speech}
-          </motion.div>
+          <div className="pet-bubble-anchor">
+            <motion.div
+              key={speech}
+              className="pet-bubble"
+              initial={{ opacity: 0, y: 6, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {speech}
+            </motion.div>
+          </div>
         )}
 
         {/* Flying star-leaf when eating */}

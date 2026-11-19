@@ -4,6 +4,8 @@ import {
   FACTS,
   FKEYS,
   PET_SKINS,
+  appendExamDigit,
+  backspaceExamInput,
   buildExamQueue,
   calculateGrade,
   calculateQuestionXp,
@@ -12,6 +14,7 @@ import {
   createDefaultState,
   dayKey,
   esc,
+  evaluateTypedAnswer,
   factCurriculumTier,
   factTimeVariance,
   genOptions,
@@ -25,6 +28,7 @@ import {
   makeQuestion,
   mastery,
   mergeLoadedState,
+  needsExamReadinessWarning,
   overallMastery,
   rankFor,
   recordStat,
@@ -187,3 +191,91 @@ test('adaptive course analyzes response times, variance, spaced intervals, and m
   assert.ok(courseWithSlowFact.focusPool.includes('7,8'));
   assert.ok(courseWithSlowFact.hesitantCount >= 1);
 });
+
+test('exam mode omits options, grants a larger timer, and warns below 100% readiness', () => {
+  const s = createDefaultState();
+  const trainQ = makeQuestion(s, '7,8', 'mul', 'train', 'ТРЕНИРОВКА');
+  const examQ = makeQuestion(s, '7,8', 'mul', 'exam', 'ЭКЗАМЕН');
+
+  assert.equal(trainQ.options.length, 4);
+  assert.equal(examQ.options.length, 0);
+  assert.ok(examQ.limit > trainQ.limit);
+  assert.ok(examQ.limit >= 9);
+
+  s.totals.ema = 1.2;
+  const fastTrainQ = makeQuestion(s, '2,2', 'mul', 'train', 'ТРЕНИРОВКА');
+  const fastExamQ = makeQuestion(s, '2,2', 'mul', 'exam', 'ЭКЗАМЕН');
+  assert.ok(fastExamQ.limit > fastTrainQ.limit);
+  assert.ok(fastExamQ.limit >= 9);
+
+  assert.equal(needsExamReadinessWarning(0), true);
+  assert.equal(needsExamReadinessWarning(99), true);
+  assert.equal(needsExamReadinessWarning(100), false);
+});
+
+test('exam keypad input handles 1-digit and 2-digit auto-submit, leading zeros, and backspace', () => {
+  // Leading zero ignored when empty
+  assert.deepEqual(appendExamDigit('', '0', 1), {
+    nextInput: '',
+    shouldAutoSubmit: false,
+    numericValue: null,
+  });
+
+  // 1-digit answer auto-submits on first digit
+  assert.deepEqual(appendExamDigit('', '6', 1), {
+    nextInput: '6',
+    shouldAutoSubmit: true,
+    numericValue: 6,
+  });
+
+  // 2-digit answer waits after first digit, auto-submits on second digit
+  const step1 = appendExamDigit('', '5', 2);
+  assert.deepEqual(step1, {
+    nextInput: '5',
+    shouldAutoSubmit: false,
+    numericValue: 5,
+  });
+  assert.equal(backspaceExamInput(step1.nextInput), '');
+
+  const step2 = appendExamDigit(step1.nextInput, '6', 2);
+  assert.deepEqual(step2, {
+    nextInput: '56',
+    shouldAutoSubmit: true,
+    numericValue: 56,
+  });
+
+  // Allows 0 as second digit (e.g. 20, 40)
+  assert.deepEqual(appendExamDigit('4', '0', 2), {
+    nextInput: '40',
+    shouldAutoSubmit: true,
+    numericValue: 40,
+  });
+
+  assert.deepEqual(evaluateTypedAnswer('56', 56), { ok: true, value: 56 });
+  assert.deepEqual(evaluateTypedAnswer('54', 56), { ok: false, value: 54 });
+  assert.deepEqual(evaluateTypedAnswer('', 56), { ok: false, value: null });
+});
+
+test('tutorialDone defaults to false, merges cleanly, and streak3 ignores expired streaks', () => {
+  const s = createDefaultState();
+  assert.equal(s.tutorialDone, false);
+
+  const mergedTrue = mergeLoadedState({ tutorialDone: true });
+  assert.equal(mergedTrue.tutorialDone, true);
+
+  const mergedMissing = mergeLoadedState({});
+  assert.equal(mergedMissing.tutorialDone, false);
+
+  // Expired streak from 10 days ago should report 0/3 on streak3 achievement until unlocked
+  const now = new Date(2026, 10, 18, 12, 0, 0).getTime();
+  const tenDaysAgo = dayKey(now - 10 * 864e5);
+  s.streak = { day: tenDaysAgo, n: 2 };
+  const streakAch = checkAchievements(s, now);
+  assert.equal(streakAch.length, 0);
+
+  // Import ACH dynamically via checking displayStreak indirectly:
+  // If streak is from yesterday, displayStreak keeps it; if 10 days ago, it is 0
+  const streakInfoOld = getStreakBonus(s, now);
+  assert.equal(streakInfoOld.streak, 0);
+});
+

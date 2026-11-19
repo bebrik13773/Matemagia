@@ -106,69 +106,50 @@ export function NameModal({ open, initialName, onSave, onClose }: NameModalProps
   );
 }
 
-interface ExamModalProps {
+interface ExamReadinessModalProps {
   open: boolean;
-  initialName: string;
-  onStart: (name: string) => void;
-  onClose: () => void;
+  masteryPct: number;
+  weakCount: number;
+  onConfirmStart: () => void;
+  onRepeatWeak: () => void;
+  onCancel: () => void;
 }
 
-export function ExamModal({ open, initialName, onStart, onClose }: ExamModalProps) {
-  const [val, setVal] = useState(initialName);
-
-  useEffect(() => {
-    if (open) {
-      setVal(initialName === 'Ученик' ? '' : initialName);
-    }
-  }, [open, initialName]);
-
+export function ExamReadinessModal({
+  open,
+  masteryPct,
+  weakCount,
+  onConfirmStart,
+  onRepeatWeak,
+  onCancel,
+}: ExamReadinessModalProps) {
   if (!open) return null;
-
   return (
-    <div className="ov open" role="dialog" aria-modal="true" aria-label="Выпускной экзамен">
-      <div className="ov-card wide">
-        <h2>🎓 Выпускной экзамен</h2>
-        <ul className="rules">
-          <li>
-            <b>36 вопросов</b> — вся таблица от 2×2 до 9×9, умножение и деление вперемешку.
-          </li>
-          <li>
-            Таймер <b>строже обычного</b> и рассчитан по твоим прошлым ответам.
-          </li>
-          <li>
-            Время каждого ответа влияет на <b>% усвоения материала</b>.
-          </li>
-          <li>
-            Ошибка или просрочка — и сертификат не выдаётся. Можно пересдавать сколько угодно.
-          </li>
-          <li>
-            <b>36 из 36 без ошибок → именной сертификат</b> с печатью Академии. 📜
-          </li>
-        </ul>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onStart(val.trim());
-          }}
-        >
-          <input
-            className="ov-input"
-            maxLength={24}
-            placeholder="Имя для сертификата"
-            aria-label="Имя для сертификата"
-            autoComplete="off"
-            value={val}
-            onChange={(e) => setVal(e.target.value)}
-          />
-          <div className="ov-actions">
-            <button type="submit" className="primary-btn mag">
-              🚀 Начать экзамен
-            </button>
-            <button type="button" className="ghost-btn" onClick={onClose}>
-              Ещё потренируюсь
-            </button>
-          </div>
-        </form>
+    <div
+      className="ov open"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Предупреждение о готовности"
+    >
+      <div className="ov-card exam-warn-card">
+        <h2>⚠️ Готовность {masteryPct}% из 100%</h2>
+        <p>
+          Подготовка ещё не достигла 100%
+          {weakCount > 0 ? ` (слабых примеров: ${weakCount})` : ''}. В финальном тесте нет
+          вариантов ответа — числа нужно вводить самостоятельно. Рекомендуем сначала повторить
+          слабые места, но можно начать и сейчас.
+        </p>
+        <div className="ov-actions exam-warn-actions">
+          <button type="button" className="primary-btn" onClick={onRepeatWeak}>
+            🔧 Повторить слабые
+          </button>
+          <button type="button" className="primary-btn mag" onClick={onConfirmStart}>
+            🚀 Всё равно начать
+          </button>
+          <button type="button" className="ghost-btn" onClick={onCancel}>
+            Отмена
+          </button>
+        </div>
       </div>
     </div>
   );

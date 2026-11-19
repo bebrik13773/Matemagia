@@ -95,7 +95,7 @@ export function PetScreen({
 
       <div className="pet-layout">
         <div className="card pet-stage-card">
-          <div className="pet-habitat">
+          <div className="pet-habitat" data-tour="pet-habitat">
             <div className="pet-habitat-glow" aria-hidden="true" />
             <CaterpillarPet
               skin={equippedSkin}
@@ -159,7 +159,7 @@ export function PetScreen({
           </button>
         </div>
 
-        <div className="card pet-wardrobe">
+        <div className="card pet-wardrobe" data-tour="pet-wardrobe">
           <div className="pet-head-row">
             <h3>🎨 Скины за уровни</h3>
             <span className="hint">Твой уровень: {li.l}</span>

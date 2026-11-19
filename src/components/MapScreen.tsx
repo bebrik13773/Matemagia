@@ -51,11 +51,16 @@ export function MapScreen({
   return (
     <section className="screen-anim" aria-label="Карта таблицы">
       <div className="page-head">
-        <button type="button" className="ghost-btn" onClick={onBackToHub}>
+        <button type="button" className="ghost-btn small" onClick={onBackToHub}>
           ← В штаб
         </button>
         <h2>🗺️ Карта таблицы</h2>
-        <button type="button" className="ghost-btn" onClick={onToggleMapMode}>
+        <button
+          type="button"
+          className="ghost-btn small"
+          data-tour="map-controls"
+          onClick={onToggleMapMode}
+        >
           {mapMode === 'mul' ? 'Показать деление ÷' : 'Показать умножение ×'}
         </button>
       </div>

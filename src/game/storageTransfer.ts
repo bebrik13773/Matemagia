@@ -179,6 +179,10 @@ function validateGameStateShape(raw: unknown): string | null {
     return 'Повреждены данные питомца';
   }
 
+  if (raw.tutorialDone !== undefined && typeof raw.tutorialDone !== 'boolean') {
+    return 'Повреждены данные статуса обучения';
+  }
+
   if (raw.cert !== null && raw.cert !== undefined) {
     if (
       !isPlainObject(raw.cert) ||

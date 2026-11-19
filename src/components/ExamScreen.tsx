@@ -118,7 +118,7 @@ export function ExamScreen({
             </li>
             <li>
               <span>
-                <b>Таймер строже на 10%</b> — проверяем уверенное автоматическое знание.
+                <b>Без вариантов ответа</b> — удобная клавиатура с автоотправкой и увеличенный таймер.
               </span>
             </li>
             <li>
@@ -144,6 +144,7 @@ export function ExamScreen({
           <button
             type="button"
             className="primary-btn mag"
+            data-tour="exam-start-btn"
             style={{ width: '100%', marginTop: 10 }}
             onClick={() => onStartExam(nameInput.trim() || state.name)}
           >

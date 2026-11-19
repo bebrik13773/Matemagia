@@ -26,6 +26,7 @@ interface HubScreenProps {
   onExport: () => void;
   onImportFile: (file: File) => void;
   onReset: () => void;
+  onStartTour: () => void;
 }
 
 export function HubScreen({
@@ -39,6 +40,7 @@ export function HubScreen({
   onExport,
   onImportFile,
   onReset,
+  onStartTour,
 }: HubScreenProps) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const li = levelInfo(state.xp);
@@ -74,7 +76,7 @@ export function HubScreen({
   return (
     <section className="screen-anim" aria-label="Штаб">
       <div className="hub">
-        <div className="card hero">
+        <div className="card hero" data-tour="hub-hero">
           <h1>Привет, {state.name}! 👋</h1>
           <span className="rank-pill">
             {rk.emoji} {rk.name} · Уровень {li.l}
@@ -110,6 +112,7 @@ export function HubScreen({
               streakBonus.streak >= 1 && !streakBonus.practicedToday ? 'is-pending' : ''
             }`}
             aria-label="Ежедневный бонус серии"
+            data-tour="hub-streak"
           >
             <div className="sb-top">
               <span className="sb-ico" aria-hidden="true">
@@ -143,19 +146,21 @@ export function HubScreen({
             </div>
           </div>
 
-          <div className="seg-label">Строгость таймера</div>
-          <div className="seg" role="group" aria-label="Строгость таймера">
-            {diffOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={`seg-btn ${state.diff === opt.id ? 'active' : ''}`}
-                aria-pressed={state.diff === opt.id}
-                onClick={() => onDiffChange(opt.id)}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div data-tour="hub-diff">
+            <div className="seg-label">Строгость таймера</div>
+            <div className="seg" role="group" aria-label="Строгость таймера">
+              {diffOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`seg-btn ${state.diff === opt.id ? 'active' : ''}`}
+                  aria-pressed={state.diff === opt.id}
+                  onClick={() => onDiffChange(opt.id)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
           <p className="hint">
             Алгоритм учитывает время, разброс скорости и ошибки по каждому примеру и подстраивает
@@ -188,6 +193,7 @@ export function HubScreen({
           <button
             type="button"
             className="big-btn train"
+            data-tour="hub-course-btn"
             onClick={() => onStartCourse(course.focusPool)}
           >
             <span className="bb-ico">⚡</span>
@@ -197,7 +203,12 @@ export function HubScreen({
             </span>
           </button>
 
-          <button type="button" className="ghost-btn free-train-btn" onClick={onTrain}>
+          <button
+            type="button"
+            className="ghost-btn free-train-btn"
+            data-tour="hub-free-btn"
+            onClick={onTrain}
+          >
             🎲 Свободная тренировка (вся таблица)
           </button>
 
@@ -215,7 +226,13 @@ export function HubScreen({
         <div className="card weak-card">
           <h3>🎯 Слабые места</h3>
           {weak.map((w) => {
-            const tag = !w.st || !w.st.n ? 'новое' : w.st.lastWrong ? 'была ошибка' : 'слабое';
+            const tag = !w.st || !w.st.n
+              ? 'новое'
+              : w.st.lastWrong
+                ? 'была ошибка'
+                : w.m >= 90
+                  ? 'мастер'
+                  : 'слабое';
             return (
               <div key={w.k} className="weak-row">
                 <span className="wk">
@@ -232,6 +249,7 @@ export function HubScreen({
           <button
             type="button"
             className="primary-btn"
+            data-tour="hub-weak-btn"
             style={{ width: '100%', marginTop: 8 }}
             onClick={() => onFocusWeak(weak.map((w) => w.k))}
           >
@@ -239,7 +257,7 @@ export function HubScreen({
           </button>
         </div>
 
-        <div className="card profile-card">
+        <div className="card profile-card" data-tour="hub-profile">
           <div>
             <div className="prof-row">
               <span className="prof-name">👤 {state.name}</span>
@@ -261,6 +279,9 @@ export function HubScreen({
             </p>
           </div>
           <div className="prof-actions">
+            <button type="button" className="ghost-btn small" onClick={onStartTour}>
+              🐛 Обучение
+            </button>
             <button type="button" className="ghost-btn small" onClick={onExport}>
               📥 Экспорт
             </button>

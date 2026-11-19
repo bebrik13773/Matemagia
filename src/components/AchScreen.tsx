@@ -11,7 +11,7 @@ export function AchScreen({ state, onBackToHub }: AchScreenProps) {
   return (
     <section className="screen-anim" aria-label="Достижения">
       <div className="page-head">
-        <button type="button" className="ghost-btn" onClick={onBackToHub}>
+        <button type="button" className="ghost-btn small" onClick={onBackToHub}>
           ← В штаб
         </button>
         <h2>🏆 Достижения</h2>

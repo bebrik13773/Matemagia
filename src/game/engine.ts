@@ -61,6 +61,7 @@ export interface GameState {
   };
   cert: CertificateData | null;
   pet: PetState;
+  tutorialDone: boolean;
 }
 
 export interface Fact {
@@ -229,6 +230,7 @@ export function createDefaultState(): GameState {
     exam: { tries: 0, best: 0, last: null },
     cert: null,
     pet: { fed: 0, skin: 'meadow' },
+    tutorialDone: false,
   };
 }
 
@@ -250,6 +252,7 @@ export function mergeLoadedState(raw: Partial<GameState> | null | undefined): Ga
     ach: raw.ach || {},
     cert: raw.cert || null,
     pet: { ...base.pet, ...(raw.pet || {}) },
+    tutorialDone: typeof raw.tutorialDone === 'boolean' ? raw.tutorialDone : false,
   };
 }
 
@@ -687,11 +690,11 @@ export function makeQuestion(
   const scaffolding = !st || st.n < 2 || st.lastWrong ? 1.15 : 1;
   const base = clamp(fe * 2.05 + 1.2, 3.5, 12);
   const df = DIFF_MULT[state.diff] || 1;
-  const limit = clamp(
-    base * df * scaffolding * (mode === 'div' ? 1.15 : 1) * (sessionMode === 'exam' ? 0.9 : 1),
-    2.5,
-    15
-  );
+  const rawLimit = base * df * scaffolding * (mode === 'div' ? 1.15 : 1);
+  const limit =
+    sessionMode === 'exam'
+      ? clamp(rawLimit * 1.45, 9, 22)
+      : clamp(rawLimit, 2.5, 15);
   return {
     k,
     mode,
@@ -703,10 +706,67 @@ export function makeQuestion(
     sym,
     ans,
     limit,
-    options: genOptions(ans, mode, a, b, p),
+    options: sessionMode === 'exam' ? [] : genOptions(ans, mode, a, b, p),
     done: false,
     tag,
   };
+}
+
+export function needsExamReadinessWarning(overallMasteryPct: number): boolean {
+  return overallMasteryPct < 100;
+}
+
+export function appendExamDigit(
+  currentInput: string,
+  digit: string,
+  expectedDigits: number
+): { nextInput: string; shouldAutoSubmit: boolean; numericValue: number | null } {
+  if (!/^[0-9]$/.test(digit)) {
+    const numeric = currentInput ? Number(currentInput) : null;
+    return {
+      nextInput: currentInput,
+      shouldAutoSubmit: false,
+      numericValue: numeric !== null && Number.isFinite(numeric) ? numeric : null,
+    };
+  }
+
+  // Prevent leading zero on empty input since multiplication/division answers are >= 2
+  if (currentInput === '' && digit === '0') {
+    return { nextInput: '', shouldAutoSubmit: false, numericValue: null };
+  }
+
+  const maxLen = Math.max(1, expectedDigits);
+  if (currentInput.length >= maxLen) {
+    const numeric = Number(currentInput);
+    return {
+      nextInput: currentInput,
+      shouldAutoSubmit: true,
+      numericValue: Number.isFinite(numeric) ? numeric : null,
+    };
+  }
+
+  const nextInput = `${currentInput}${digit}`;
+  const numericValue = Number(nextInput);
+  return {
+    nextInput,
+    shouldAutoSubmit: nextInput.length >= maxLen,
+    numericValue: Number.isFinite(numericValue) ? numericValue : null,
+  };
+}
+
+export function backspaceExamInput(currentInput: string): string {
+  return currentInput.slice(0, -1);
+}
+
+export function evaluateTypedAnswer(
+  rawInput: string,
+  correctAns: number
+): { ok: boolean; value: number | null } {
+  const trimmed = rawInput.trim();
+  if (!trimmed) return { ok: false, value: null };
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) return { ok: false, value: null };
+  return { ok: value === correctAns, value };
 }
 
 export function buildExamQueue(): Array<{ k: string; mode: QuestionMode }> {
@@ -748,7 +808,13 @@ export const ACH: AchievementDef[] = [
   { id: 'exam', icon: '🎯', t: 'Экзамен сдан', d: 'Набрать 33+ из 36 на экзамене', p: (s) => [Math.min(s.exam.best, 33), 33] },
   { id: 'cert', icon: '📜', t: 'Архимаг', d: 'Идеальный экзамен 36/36 — сертификат!', p: (s) => [s.cert ? 1 : 0, 1] },
   { id: 'focus', icon: '🔧', t: 'Работа над ошибками', d: 'Завершить фокус-тренировку', p: (s) => [Math.min(s.totals.focusDone, 1), 1] },
-  { id: 'streak3', icon: '📅', t: 'Три дня подряд', d: 'Заниматься 3 дня подряд', p: (s) => [Math.min(s.streak.n, 3), 3] },
+  {
+    id: 'streak3',
+    icon: '📅',
+    t: 'Три дня подряд',
+    d: 'Заниматься 3 дня подряд',
+    p: (s) => [s.ach.streak3 ? 3 : Math.min(displayStreak(s), 3), 3],
+  },
 ];
 
 export function bumpStreak(state: GameState, now = Date.now()): void {
